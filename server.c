@@ -7,32 +7,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <dirent.h>
 #include <signal.h>
 #include <errno.h>
-#include<pthread.h>
-
-
+#include <pthread.h>
 
 
 static volatile int keepRunning = 1;
 char* path;
 
-void intHandler(int dummy) {
+void intHandler(int holder) {
     printf("\nctrl^c detected server close\n");
     keepRunning = 0;
 }
 
 void* handle_connection(void* p_client_socket);
-
-
-void func(int connfd, char* path);
-void searchInDir(char* dirname);
-int searchFile(char* fileName,char* path);
-
-
-
-
 
 int main(int argc, char** argv) {
     
@@ -51,7 +39,7 @@ int main(int argc, char** argv) {
 
      // check the protocol number is correct or not
     if (atoi(argv[1])!=4 && atoi(argv[1])!=6){
-        perror("wrong protocol number");
+        perror("wrong protocol number entered program exit\n");
         exit(1);
     }
 
@@ -95,15 +83,12 @@ int main(int argc, char** argv) {
     }
 
    
-    
     // check valid port numebr 
     in_port_t portNumber=atoi(argv[2]);
 
-    // check path
-    searchInDir(argv[3]);
 
     if (portNumber==0){
-        perror("wrong port number");
+        perror("wrong port number extered\n");
         exit(1);
     }
 
@@ -132,11 +117,7 @@ int main(int argc, char** argv) {
     // Accept a connection - blocks until a connection is ready to be accepted
     // Get back a new file descriptor to communicate on
     
-   
-
-    //persistent connection
-    //func(newsockfd,argv[3]);
-
+    // if ctrl c is pressed, stop the loop
     signal(SIGINT, intHandler);
     
     while (keepRunning){
@@ -147,7 +128,7 @@ int main(int argc, char** argv) {
             perror("accept");
             exit(EXIT_FAILURE);
         }
-
+        
         
         pthread_t t;
         int *pclient=malloc(sizeof(int));
@@ -162,97 +143,22 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-//search if dir exist in the root 
-void searchInDir(char* dirname){
-    DIR *d;
-    struct  dirent *dir;
-    d = opendir(dirname);
-    if (d)
-    {
-        while ((dir = readdir(d)) != NULL)
-        {
-            //printf("%s\n", dir->d_name);
-        }
-        
-    }
-    else{
-        printf("path not found\n");
-        exit(errno);
-    }
-
-    closedir(d);
-}
-
-//persistent connection unless exit is sent from client
-void func(int newsockfd, char* path){
-
-    char buffer[256];
-    int n;
-    int gotSend=1;
-   
-
-    
-
-    while(1){
-       
-        // Read characters from the connection, then process
-        n = read(newsockfd, buffer, 255); // n is number of characters read
-
-        // exit the loop if n is 0, which happens when client disconnects the server
-        
-
-        if (n < 0) {
-            perror("read");
-            exit(EXIT_FAILURE);
-            break;
-        }
-        // Null-terminate string
-        buffer[n] = '\0';
-
-      
-
-        printf("buffer is:\n%s",buffer);
-        
-        if (gotSend==1 && n>0){
-
-            if (strncmp(buffer,"GET",3)==0){
-                
-            }
-           
-            
-            snprintf(buffer,sizeof(buffer),"HTTP/1.1 200 OK\r\n"
-            "Content-Type: index/html\n");
-            printf("send response \n%s\n",buffer);
-            n=write(newsockfd,buffer,strlen(buffer));
-
-            if (n < 0) {
-                perror("write");
-                exit(EXIT_FAILURE);
-            }
-            
-            gotSend=0;
-           
-        }
-       
-
-    }
-}
 
 //search file
 int searchFile(char* fileName,char* path){
 
-    printf("fileName is %s, path is %s\n",fileName,path);
+    //printf("fileName is %s, path is %s\n",fileName,path);
 
     char temp[500];
     strcpy(temp,path);
     strcat(temp,fileName);
-    printf("whole path is %s\n",temp);
+    //printf("whole path is %s\n",temp);
     if (strstr(temp,"../")){
         return 1;
     }
     
     if (access(temp,F_OK)!=-1){
-        printf("found in searchfile\n");
+        //printf("found in searchfile\n");
         return 0;
     }
     return 1;
@@ -268,11 +174,11 @@ void* handle_connection(void* p_client_socket){
     free(p_client_socket);
     int n;
     
-    while(strstr(buffer,"HTTP/1.0")==0){
+    while(strstr(buffer,"HTTP/1.0")==0 && strstr(buffer,"HTTP/1.1")==0){
         n = read(newsockfd, buffer, sizeof(buffer));
         strcat(temp,buffer);
-        printf("temp now is %s\n",temp);
-        printf("buffer now is %s\n",buffer);
+        //printf("temp now is %s\n",temp);
+        //printf("buffer now is %s\n",buffer);
     }
    
     
@@ -284,7 +190,7 @@ void* handle_connection(void* p_client_socket){
     }
     
     if (n>0){
-        printf("root is %s\n",path);
+        //printf("root is %s\n",path);
         char* ptr = strtok(buffer,delim);
 
 
@@ -293,7 +199,7 @@ void* handle_connection(void* p_client_socket){
 
                 //gets file name
                 char* ptrChopped=ptr;
-                printf("%s\n", ptrChopped);
+                //printf("%s\n", ptrChopped);
 
                 //if can be found in directory
                 if (searchFile(ptrChopped,path)==0){
@@ -315,13 +221,22 @@ void* handle_connection(void* p_client_socket){
 
                         
                         FILE* file=fopen(temp,"r");
-                        printf("open successfully\n");
-                        
-                        while(fgets(buf,sizeof(buf),file)){
-                            printf("%s",buf);
-                            send(newsockfd,buf,strlen(buf),0);
+                        if (file==NULL){
+                            perror("Error on opening file\n");
+                            close(newsockfd);
                         }
-                        fclose(file);
+                        
+                        else{
+                        
+                            printf("open successfully\n");
+                        
+                            while(fgets(buf,sizeof(buf),file)){
+                                printf("%s",buf);
+                                send(newsockfd,buf,strlen(buf),0);
+                            }
+                            fclose(file);
+                        }
+                       
                        
                     }
 
@@ -337,15 +252,26 @@ void* handle_connection(void* p_client_socket){
                         size_t bytes_read=1;
                         //open the file in binary mode
                         FILE* jpg = fopen(temp,"rb");
-                        printf("open successfully\n");
+                        if (jpg==NULL){
+                            perror("Error on opening file\n");
+                            close(newsockfd);
+                        }
                         
-                        while(bytes_read != 0){
-                            bytes_read=fread(buf,sizeof(char),100,jpg);
-                            send(newsockfd,buf,bytes_read,0);
+                        else{
+                        
+                            printf("open successfully\n");
+                        
+                            while(bytes_read != 0){
+                                bytes_read=fread(buf,sizeof(char),100,jpg);
+                                send(newsockfd,buf,bytes_read,0);
+                            }
+                            
+                            fclose(jpg);
                         }
                        
                        
-                        fclose(jpg);
+                       
+                      
                        
 
                     }
@@ -357,14 +283,21 @@ void* handle_connection(void* p_client_socket){
                         printf("css file\n");
 
                         FILE* file=fopen(temp,"r");
-                        printf("open successfully\n");
-                        
-                        while(fgets(buf,sizeof(buf),file)){
-                            printf("%s",buf);
-                            send(newsockfd,buf,strlen(buf),0);
+                        if (file==NULL){
+                            perror("Error on opening file\n");
+                            close(newsockfd);
                         }
-                        fclose(file);
-                       
+                        
+                        else{
+                        
+                            printf("open successfully\n");
+                        
+                            while(fgets(buf,sizeof(buf),file)){
+                                printf("%s",buf);
+                                send(newsockfd,buf,strlen(buf),0);
+                            }
+                            fclose(file);
+                        }
                     }
 
                     //if its a js file
@@ -374,26 +307,34 @@ void* handle_connection(void* p_client_socket){
                         printf("js file\n");
 
                         FILE* file=fopen(temp,"r");
-                        printf("open successfully\n");
                         
-                        while(fgets(buf,sizeof(buf),file)){
-                            printf("%s",buf);
-                            send(newsockfd,buf,strlen(buf),0);
+                        //error detection
+                        if (file==NULL){
+                            perror("Error on opening file\n");
+                            close(newsockfd);
                         }
-                        fclose(file);
+                        
+                        else{
+                        
+                            printf("open successfully\n");
+                        
+                            while(fgets(buf,sizeof(buf),file)){
+                                printf("%s",buf);
+                                send(newsockfd,buf,strlen(buf),0);
+                            }
+                            fclose(file);
+                        }
                        
                     }
 
                     //if its else 
                     else{
-
                         send(newsockfd,"Content-Type: application/octet-stream\r\n",strlen("Content-Type: application/octet-stream\r\n"),0);
                         //send(newsockfd,"\r\n",strlen("\r\n"),0);
                         printf("unknown file\n");
                         
                     }
 
-                   
                   
                     printf("connection close\n");
                     close(newsockfd);
@@ -403,10 +344,8 @@ void* handle_connection(void* p_client_socket){
 
                 else{
                     char* reply1="HTTP/1.0 404 Not Found\r\n";
-                    printf("unsuccessfly found\n");
+                    perror("unsuccessfly found\n");
                     send(newsockfd,reply1,strlen(reply1),0);
-                    //send(newsockfd,"Content-Type: application/octet-stream\r\n",strlen("Content-Type: application/octet-stream\r\n"),0);
-                  
                     close(newsockfd);
                 }
                 
@@ -416,6 +355,3 @@ void* handle_connection(void* p_client_socket){
 
     return NULL;
 }
-
-
-
